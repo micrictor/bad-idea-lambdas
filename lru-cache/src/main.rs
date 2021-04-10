@@ -55,10 +55,32 @@ async fn get_value(key: String) -> Response {
     Response { value: String::from(value), msg: String::from("Successfuly got value!") }
 }
 
-async fn set_value(key: String, value: String) -> Response {
-    println!("{} = {}", key, value);
+const VALUES_HEADER: &str = "static CACHE_VALUES: [(&str, &str); 5] = [";
+const VALUES_FORMAT_ENTRY: &str = "    (\"{0}\", \"{1}\"),";
+const VALUES_FOOTER: &str = "];";
 
-    Response { value: value, msg: String::from("Successfuly set value!") }
+async fn set_value<'a>(key: String, value: String) -> Response {
+    println!("Setting {} = {}", key, value);
+    let response = Response { value: value, msg: String::from("Successfuly set value!") };
+
+    let cache_len = env::var("CACHE_MAX_ITEMS").unwrap_or("5".to_string()).parse::<usize>().unwrap();
+    let mut cache: LruCache<&str, &str> = LruCache::new(cache_len);
+    for (cache_key, cache_value) in CACHE_VALUES.iter() {
+        cache.put(cache_key, cache_value);
+    }
+
+    cache.put(&key as &str, &response.value as &str);
+    let _values = get_cache_values(&cache);
+
+
+    drop(cache);
+    return response;
+}
+
+fn get_cache_values<'a>(cache: &'a LruCache<&str, &str>) -> Vec<(&'a str, &'a str)> {
+    let result = cache.iter().map(|x| (*x.0, *x.1)).collect::<Vec<(&str, &str)>>();
+    drop(cache);
+    result
 }
 
 static CACHE_VALUES: [(&str, &str); 5] = [
