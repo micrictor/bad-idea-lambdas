@@ -31,3 +31,12 @@ functions:
     handler: lru-cache
     environment:
       CACHE_MAX_ITEMS: 5
+
+custom:
+  rust:
+    # flags passed to cargo
+    # cargoFlags: '--features enable-awesome'
+    # custom docker tag
+    dockerTag: 'latest'
+    #  custom docker image
+    dockerImage: 'lambda-rust'

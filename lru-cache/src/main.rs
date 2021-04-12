@@ -1,7 +1,14 @@
 use lambda::{handler_fn, Context};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use lru::LruCache;
 use std::env;
+use std::fs;
+use std::fs::OpenOptions;
+
+use rusoto_core::Region;
+use rusoto_s3::{S3, S3Client};
+use rusoto_lambda::{Lambda, LambdaClient, GetFunctionRequest};
 
 type Error = Box<dyn std::error::Error + Sync + Send + 'static>;
 
@@ -40,53 +47,74 @@ async fn handler<'a>(event: Request, _: Context) -> Result<Response, Error> {
         }
     };
 
+    let _ = update_runtime();
+
     Ok(response)
 }
 
 async fn get_value(key: String) -> Response {
     let cache_len = env::var("CACHE_MAX_ITEMS").unwrap_or("5".to_string()).parse::<usize>().unwrap();
-    let mut cache: LruCache<&str, &str> = LruCache::new(cache_len);
-    for (cache_key, cache_value) in CACHE_VALUES.iter() {
-        cache.put(cache_key, cache_value);
-    }
+    let mut cache: LruCache<String, String> = LruCache::new(cache_len);
+    get_cache_values(&mut cache);
+    set_cache_values(&mut cache);
 
-    let value = *cache.get(&&*key as &&str).unwrap_or(&"");
+    let value = &*(cache.get(&key).unwrap());
 
-    Response { value: String::from(value), msg: String::from("Successfuly got value!") }
+    Response { value: value.clone(), msg: String::from("Successfuly got value!") }
 }
-
-const VALUES_HEADER: &str = "static CACHE_VALUES: [(&str, &str); 5] = [";
-const VALUES_FORMAT_ENTRY: &str = "    (\"{0}\", \"{1}\"),";
-const VALUES_FOOTER: &str = "];";
 
 async fn set_value<'a>(key: String, value: String) -> Response {
     println!("Setting {} = {}", key, value);
-    let response = Response { value: value, msg: String::from("Successfuly set value!") };
 
     let cache_len = env::var("CACHE_MAX_ITEMS").unwrap_or("5".to_string()).parse::<usize>().unwrap();
-    let mut cache: LruCache<&str, &str> = LruCache::new(cache_len);
-    for (cache_key, cache_value) in CACHE_VALUES.iter() {
-        cache.put(cache_key, cache_value);
+    let mut cache: LruCache<String, String> = LruCache::new(cache_len);
+    get_cache_values(&mut cache);
+
+    cache.put(key, value.clone());
+
+    set_cache_values(&mut cache);
+
+    Response { value: value.clone(), msg: String::from("Successfuly set value!") }
+}
+
+const CACHE_FILE: &str = "/tmp/resources/cache.json";
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CacheEntry {
+    key: String,
+    value: String,
+}
+
+fn set_cache_values<'a>(cache: &'a LruCache<String, String>) -> Vec<CacheEntry> {
+    let cache_entries = cache.iter().map(|x| 
+        CacheEntry{ key: x.0.clone(), value: x.1.clone() }).collect::<Vec<CacheEntry>>();
+
+    let file = OpenOptions::new().write(true).open(CACHE_FILE);
+
+    let _ = serde_json::to_writer(file.unwrap(), &cache_entries);
+    cache_entries
+}
+
+fn get_cache_values(cache: &mut LruCache<String, String>) {
+    let file = OpenOptions::new().read(true).open(CACHE_FILE);
+    let cache_entries: Vec<CacheEntry> = serde_json::from_reader(file.unwrap()).unwrap();
+    for cache_entry in cache_entries.iter() {
+        cache.put(cache_entry.key.clone(), cache_entry.value.clone());
     }
-
-    cache.put(&key as &str, &response.value as &str);
-    let _values = get_cache_values(&cache);
-
-
-    drop(cache);
-    return response;
 }
 
-fn get_cache_values<'a>(cache: &'a LruCache<&str, &str>) -> Vec<(&'a str, &'a str)> {
-    let result = cache.iter().map(|x| (*x.0, *x.1)).collect::<Vec<(&str, &str)>>();
-    drop(cache);
-    result
-}
+async fn update_runtime() {
+    let runtime_dir = env::var("LAMBDA_TASK_ROOT").unwrap_or(String::from("./"));
+    let lambda_name = env::var("AWS_LAMBDA_FUNCTION_NAME").unwrap();
 
-static CACHE_VALUES: [(&str, &str); 5] = [
-    ("test_key0", "test_value0"),
-    ("test_key1", "test_value1"),
-    ("test_key2", "test_value2"),
-    ("test_key3", "test_value3"),
-    ("test_key4", "test_value4"),
-];
+    // First, collect all the info about ourselves we'll need
+    let lambda_client = LambdaClient::new(Region::default());
+    let lambda_request = GetFunctionRequest { function_name: lambda_name, qualifier: None };
+    let lambda_response = lambda_client.get_function(lambda_request).await.unwrap();
+    println!("{:?}", lambda_response);
+    
+    // Second, we need to create a new .zip with our JSON and bootstrap
+    let _ = fs::copy(runtime_dir + "/bootstrap", "/tmp/bootstrap");
+    let _zipfile = fs::File::create("lambda.zip");
+}

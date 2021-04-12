@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+echo "Adding additional assets to the runtime..."
+base_dir=`pwd`
+cd /code
+zip -u "$base_dir/$1.zip" resources/cache.json
