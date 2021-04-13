@@ -2,5 +2,5 @@
 
 echo "Adding additional assets to the runtime..."
 base_dir=`pwd`
-cd /code
-zip -u "$base_dir/$1.zip" resources/cache.json
+cd /code/resources/
+zip -u "$base_dir/$1.zip" cache.json

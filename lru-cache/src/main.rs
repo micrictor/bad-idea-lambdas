@@ -58,7 +58,7 @@ async fn get_value(key: String) -> Response {
     get_cache_values(&mut cache);
     set_cache_values(&mut cache);
 
-    let value = &*(cache.get(&key).unwrap());
+    let value = (cache.get(&key).unwrap()).clone();
 
     Response { value: value.clone(), msg: String::from("Successfuly got value!") }
 }
@@ -77,7 +77,7 @@ async fn set_value<'a>(key: String, value: String) -> Response {
     Response { value: value.clone(), msg: String::from("Successfuly set value!") }
 }
 
-const CACHE_FILE: &str = "/tmp/resources/cache.json";
+const CACHE_FILE: &str = "cache.json";
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -90,7 +90,9 @@ fn set_cache_values<'a>(cache: &'a LruCache<String, String>) -> Vec<CacheEntry> 
     let cache_entries = cache.iter().map(|x| 
         CacheEntry{ key: x.0.clone(), value: x.1.clone() }).collect::<Vec<CacheEntry>>();
 
-    let file = OpenOptions::new().write(true).open(CACHE_FILE);
+    let filepath = format!("/tmp/{}", CACHE_FILE);
+    println!("Opening file {} for writing...", filepath);
+    let file = OpenOptions::new().write(true).create(true).open(filepath);
 
     let _ = serde_json::to_writer(file.unwrap(), &cache_entries);
     cache_entries
