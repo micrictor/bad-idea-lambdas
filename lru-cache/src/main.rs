@@ -49,7 +49,7 @@ async fn handler<'a>(event: Request, _: Context) -> Result<Response, Error> {
         }
     };
 
-    // let _ = update_runtime().await;
+    let _ = update_runtime().await;
 
     Ok(response)
 }
