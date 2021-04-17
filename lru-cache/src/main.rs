@@ -18,7 +18,9 @@ fn default_value() -> String {
 
 #[derive(Deserialize)]
 struct Request {
+    #[serde(default)]
     operation: String,
+    #[serde(default)]
     key: String,
 
     #[serde(default = "default_value")]
@@ -47,7 +49,7 @@ async fn handler<'a>(event: Request, _: Context) -> Result<Response, Error> {
         }
     };
 
-    let _ = update_runtime();
+    // let _ = update_runtime().await;
 
     Ok(response)
 }
@@ -113,8 +115,8 @@ async fn update_runtime() {
     // First, collect all the info about ourselves we'll need
     let lambda_client = LambdaClient::new(Region::default());
     let lambda_request = GetFunctionRequest { function_name: lambda_name, qualifier: None };
-    let lambda_response = lambda_client.get_function(lambda_request).await.unwrap();
-    println!("{:?}", lambda_response);
+    let lambda_response_future = lambda_client.get_function(lambda_request);
+    println!("Lambda reply: {:?}", lambda_response_future.await.unwrap());
     
     // Second, we need to create a new .zip with our JSON and bootstrap
     let _ = fs::copy(runtime_dir + "/bootstrap", "/tmp/bootstrap");
