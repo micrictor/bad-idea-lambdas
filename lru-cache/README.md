@@ -4,6 +4,10 @@ An LRU cache that asks the question - what if I wanted to write a serverless, ne
 
 By invoking the lambda, you can get and set values, as well as manipulate the max size of the cache.
 
+The cache is maintained as a JSON-blob, stored inside the Lambda code definition alongside the executable actually being ran. This JSON is deserialized into an LRU cache, with the max size dictated by an environment variable. The resulting cache, after the apprpriate get/set, is serialized back into a file. This file, and the compiled Rust binary, are then zipped up and used to create a new version of the Lambda function.
+
+Meta, right?
+
 
 ## Build/deploy
 
