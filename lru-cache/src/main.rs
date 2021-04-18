@@ -5,10 +5,12 @@ use lru::LruCache;
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
+use std::io::Write;
 
+use bytes::Bytes;
 use rusoto_core::Region;
-use rusoto_s3::{S3, S3Client};
-use rusoto_lambda::{Lambda, LambdaClient, GetFunctionRequest};
+use rusoto_lambda::{Lambda, LambdaClient, UpdateFunctionCodeRequest};
+use zip;
 
 type Error = Box<dyn std::error::Error + Sync + Send + 'static>;
 
@@ -57,8 +59,8 @@ async fn handler<'a>(event: Request, _: Context) -> Result<Response, Error> {
 async fn get_value(key: String) -> Response {
     let cache_len = env::var("CACHE_MAX_ITEMS").unwrap_or("5".to_string()).parse::<usize>().unwrap();
     let mut cache: LruCache<String, String> = LruCache::new(cache_len);
-    get_cache_values(&mut cache);
-    set_cache_values(&mut cache);
+    deserialize_cache(&mut cache);
+    serialize_cache(&mut cache);
 
     let value = (cache.get(&key).unwrap()).clone();
 
@@ -70,11 +72,11 @@ async fn set_value<'a>(key: String, value: String) -> Response {
 
     let cache_len = env::var("CACHE_MAX_ITEMS").unwrap_or("5".to_string()).parse::<usize>().unwrap();
     let mut cache: LruCache<String, String> = LruCache::new(cache_len);
-    get_cache_values(&mut cache);
+    deserialize_cache(&mut cache);
 
     cache.put(key, value.clone());
 
-    set_cache_values(&mut cache);
+    serialize_cache(&mut cache);
 
     Response { value: value.clone(), msg: String::from("Successfuly set value!") }
 }
@@ -88,7 +90,7 @@ struct CacheEntry {
     value: String,
 }
 
-fn set_cache_values<'a>(cache: &'a LruCache<String, String>) -> Vec<CacheEntry> {
+fn serialize_cache<'a>(cache: &'a LruCache<String, String>) -> Vec<CacheEntry> {
     let cache_entries = cache.iter().map(|x| 
         CacheEntry{ key: x.0.clone(), value: x.1.clone() }).collect::<Vec<CacheEntry>>();
 
@@ -100,7 +102,7 @@ fn set_cache_values<'a>(cache: &'a LruCache<String, String>) -> Vec<CacheEntry> 
     cache_entries
 }
 
-fn get_cache_values(cache: &mut LruCache<String, String>) {
+fn deserialize_cache(cache: &mut LruCache<String, String>) {
     let file = OpenOptions::new().read(true).open(CACHE_FILE);
     let cache_entries: Vec<CacheEntry> = serde_json::from_reader(file.unwrap()).unwrap();
     for cache_entry in cache_entries.iter() {
@@ -111,14 +113,41 @@ fn get_cache_values(cache: &mut LruCache<String, String>) {
 async fn update_runtime() {
     let runtime_dir = env::var("LAMBDA_TASK_ROOT").unwrap_or(String::from("./"));
     let lambda_name = env::var("AWS_LAMBDA_FUNCTION_NAME").unwrap();
-
-    // First, collect all the info about ourselves we'll need
-    let lambda_client = LambdaClient::new(Region::default());
-    let lambda_request = GetFunctionRequest { function_name: lambda_name, qualifier: None };
-    let lambda_response_future = lambda_client.get_function(lambda_request);
-    println!("Lambda reply: {:?}", lambda_response_future.await.unwrap());
     
-    // Second, we need to create a new .zip with our JSON and bootstrap
-    let _ = fs::copy(runtime_dir + "/bootstrap", "/tmp/bootstrap");
-    let _zipfile = fs::File::create("lambda.zip");
-}
+    fs::copy(runtime_dir + "/bootstrap", "/tmp/bootstrap")
+        .expect("Problem copying binary");
+
+    // The cache.json containing the deserialized cache is already in /tmp at this point
+
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o777);
+
+        for filename in ["bootstrap", "cache.json"].iter() {
+            let filepath = format!("/tmp/{}", filename);
+            
+            let contents = fs::read(filepath)
+                .expect("Failed to read!");
+
+            zip.start_file(String::from(*filename), options)
+                .expect("Error starting file");
+            zip.write_all(&contents[..])
+                .expect("Error writing file");
+        }
+        zip.finish()
+            .expect("Error writing complete zip");
+    }
+
+    let buf_slice = &buf[..].to_owned();
+    let lambda_client = LambdaClient::new(Region::default());
+
+    let _result = lambda_client.update_function_code(UpdateFunctionCodeRequest {
+        function_name: lambda_name,
+        publish: Some(true),
+        zip_file: Some(Bytes::from(buf_slice.clone())),
+        ..Default::default()
+    }).await.expect("Call to update function code failed!");
+}   
