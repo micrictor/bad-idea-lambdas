@@ -67,7 +67,7 @@ async fn get_value(key: String) -> Response {
         None => {
             return Response { value: "null".to_owned(), msg: "Key not in cache".to_owned()}
         }
-    }
+    };
 
     Response { value: value.clone(), msg: String::from("Successfuly got value!") }
 }
