@@ -62,7 +62,12 @@ async fn get_value(key: String) -> Response {
     deserialize_cache(&mut cache);
     serialize_cache(&mut cache);
 
-    let value = (cache.get(&key).unwrap()).clone();
+    let value = match cache.get(&key) {
+        Some(value) => value,
+        None => {
+            return Response { value: "null".to_owned(), msg: "Key not in cache".to_owned()}
+        }
+    }
 
     Response { value: value.clone(), msg: String::from("Successfuly got value!") }
 }
@@ -130,7 +135,7 @@ async fn update_runtime() {
             let filepath = format!("/tmp/{}", filename);
             
             let contents = fs::read(filepath)
-                .expect("Failed to read!");
+                .expect("Failed to read");
 
             zip.start_file(String::from(*filename), options)
                 .expect("Error starting file");
@@ -149,5 +154,5 @@ async fn update_runtime() {
         publish: Some(true),
         zip_file: Some(Bytes::from(buf_slice.clone())),
         ..Default::default()
-    }).await.expect("Call to update function code failed!");
+    }).await.expect("Call to update function code failed");
 }   
