@@ -19,4 +19,5 @@ functions:
     events:
       - httpApi:
           path: /inceptor
-          method: get
+          method: "*"
+          
