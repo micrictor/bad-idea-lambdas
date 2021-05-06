@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	lambda_handler "github.com/aws/aws-lambda-go/lambda"
@@ -165,6 +166,7 @@ var LETTERS = []rune("abcdefghijklmnopqrstuvwxyz")
 // Returns a random string of lowercase alphabetical characters of specified length
 func makeRandom(length int, output_channel chan string) {
 	log.Println("Making random function name...")
+	rand.Seed(time.Now().Unix())
 	random_runes := make([]rune, length)
 	for i := range random_runes {
 		random_runes[i] = LETTERS[rand.Intn(len(LETTERS))]
