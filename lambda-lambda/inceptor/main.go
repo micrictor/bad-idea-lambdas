@@ -64,8 +64,6 @@ func getHandler(request Request) (Response, error) {
 		}
 
 		output_string := string(invoke_output.Payload)
-		// Just hope and pray this lambda never runs "warm"
-		HEADERS["Content-Type"] = "application/json"
 		resp = Response{
 			StatusCode: 200,
 			Body:       output_string,
@@ -104,10 +102,19 @@ func postHandler(request Request) (Response, error) {
 			Headers:    HEADERS,
 		}, nil
 	} else {
+		invoke_output, err := invokeLambda(params.SourceCode)
+		if err != nil {
+			return Response{
+				StatusCode: 500,
+				Body:       fmt.Sprintf("Error when building lambda: %s", err.Error()),
+				Headers:    HEADERS,
+			}, nil
+		}
 
+		output_string := string(invoke_output.Payload)
 		return Response{
 			StatusCode: 200,
-			Body:       params.SourceCode,
+			Body:       output_string,
 			Headers:    HEADERS,
 		}, nil
 	}
